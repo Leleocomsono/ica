@@ -1,0 +1,5 @@
+aiohttp==3.13.2
+discord.py==2.6.4
+psutil
+PyNaCl
+gTTS
