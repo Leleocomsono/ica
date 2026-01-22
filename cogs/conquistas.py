@@ -1,3 +1,5 @@
+# cogs/conquistas.py completo com fixes (adicionado update de messages no on_message para rastrear atributos/conquistas)
+
 import discord
 from discord.ext import commands
 from datetime import datetime
@@ -19,7 +21,11 @@ class Conquistas(commands.Cog):
                 conn.close()
                 return
             
-            achievement_id = ach['achievement_id']
+            achievement_id = ach['achievement_id'] if 'achievement_id' in ach else None
+            
+            if achievement_id is None:
+                conn.close()
+                return
             
             cursor.execute("SELECT * FROM conquistas_usuario WHERE user_id = ? AND achievement_id = ?", (user_id, achievement_id))
             if not cursor.fetchone():
@@ -30,12 +36,12 @@ class Conquistas(commands.Cog):
                 conn.commit()
             
             conn.close()
-        except:
-            pass
+        except Exception as e:
+            print(f"Erro ao desbloquear conquista: {e}")
     
     @commands.Cog.listener()
     async def on_message(self, message):
-        """Verificar conquistas ao receber mensagens"""
+        """Verificar conquistas ao receber mensagens e atualizar contador"""
         if message.author.bot:
             return
         
@@ -47,13 +53,16 @@ class Conquistas(commands.Cog):
             
             cursor.execute("SELECT messages FROM usuarios WHERE user_id = ?", (user_id,))
             user_data = cursor.fetchone()
+            
+            message_count = user_data['messages'] if user_data and 'messages' in user_data else 0
+            message_count += 1  # Incrementar contador
+            
+            cursor.execute("UPDATE usuarios SET messages = ? WHERE user_id = ?", (message_count, user_id))
+            conn.commit()
+            
             conn.close()
             
-            if not user_data:
-                return
-            
-            message_count = user_data['messages'] or 0
-            
+            # Agora verificar conquistas com o novo count
             if message_count == 1:
                 await self.unlock_achievement(user_id, "Primeiro Passo")
             elif message_count == 100:
@@ -62,8 +71,8 @@ class Conquistas(commands.Cog):
                 await self.unlock_achievement(user_id, "Tagarela")
             elif message_count == 1000:
                 await self.unlock_achievement(user_id, "Locutor")
-        except:
-            pass
+        except Exception as e:
+            print(f"Erro no on_message conquistas: {e}")
     
     @commands.command(name='conquistas', aliases=['achievements'])
     async def conquistas(self, ctx, member: discord.Member = None):
@@ -94,9 +103,9 @@ class Conquistas(commands.Cog):
         locked = []
         
         for ach in achievements:
-            if ach['unlocked_at']:
+            if 'unlocked_at' in ach and ach['unlocked_at']:
                 unlocked.append(ach)
-            elif not ach['secret']:
+            elif 'secret' in ach and not ach['secret']:
                 locked.append(ach)
         
         embed.description = f"**{len(unlocked)}** conquistas desbloqueadas"
@@ -104,8 +113,11 @@ class Conquistas(commands.Cog):
         if unlocked:
             unlocked_text = ""
             for ach in unlocked[:10]:
-                rarity = ach['current_rarity'] or 0.0
-                unlocked_text += f"{ach['icon']} **{ach['name']}** ({rarity:.1f}%)\n└ {ach['description']}\n"
+                rarity = ach['current_rarity'] if 'current_rarity' in ach else 0.0
+                icon = ach['icon'] if 'icon' in ach else ''
+                name = ach['name'] if 'name' in ach else 'Desconhecido'
+                description = ach['description'] if 'description' in ach else 'Sem descrição'
+                unlocked_text += f"{icon} **{name}** ({rarity:.1f}%)\n└ {description}\n"
             embed.add_field(
                 name="Desbloqueadas",
                 value=unlocked_text[:1024] or "Nenhuma",
@@ -115,7 +127,9 @@ class Conquistas(commands.Cog):
         if locked:
             locked_text = ""
             for ach in locked[:5]:
-                locked_text += f"🔒 **{ach['name']}**\n└ {ach['description']}\n"
+                name = ach['name'] if 'name' in ach else 'Desconhecido'
+                description = ach['description'] if 'description' in ach else 'Sem descrição'
+                locked_text += f"Locked **{name}**\n└ {description}\n"
             embed.add_field(
                 name="Bloqueadas",
                 value=locked_text[:1024] or "Nenhuma",
