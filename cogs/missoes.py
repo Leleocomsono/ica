@@ -44,6 +44,23 @@ class Missoes(commands.Cog):
             else:
                 status = f"{progress}/{target}"
             
+            # Lógica para desbloqueio de profissões secretas na coleta
+            if completed and not claimed:
+                if mission['title'] == 'O Caminho das Sombras':
+                    cursor.execute("INSERT OR IGNORE INTO conquistas_usuario (user_id, achievement_id, earned_at) VALUES (?, ?, ?)",
+                                   (user_id, "unlock_ladrao", datetime.now().isoformat()))
+                    try:
+                        user = self.bot.get_user(int(user_id))
+                        if user: await user.send("🕵️ **Profissão Desbloqueada:** Você agora tem acesso à profissão de **Ladrão**! Use `!escolher ladrao` para começar.")
+                    except: pass
+                elif mission['title'] == 'O Toque do Silêncio':
+                    cursor.execute("INSERT OR IGNORE INTO conquistas_usuario (user_id, achievement_id, earned_at) VALUES (?, ?, ?)",
+                                   (user_id, "unlock_assassino", datetime.now().isoformat()))
+                    try:
+                        user = self.bot.get_user(int(user_id))
+                        if user: await user.send("🔪 **Profissão Desbloqueada:** Você agora tem acesso à profissão de **Assassino**! Use `!escolher assassino` para começar.")
+                    except: pass
+
             reward_text = f"{mission['reward_value']:,} "
             reward_text += "XP" if mission['reward_type'] == 'xp' else "moedas"
             
