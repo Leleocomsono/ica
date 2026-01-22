@@ -14,9 +14,27 @@ class Inventario(commands.Cog):
         conn = self.bot.db.get_connection()
         cursor = conn.cursor()
         
+        # Ensure column exists just in case of runtime race conditions or different DB file
+        try:
+            cursor.execute("SELECT inventory_slots FROM usuarios LIMIT 1")
+        except:
+            try:
+                cursor.execute("ALTER TABLE usuarios ADD COLUMN inventory_slots INTEGER DEFAULT 10")
+                conn.commit()
+            except:
+                pass
+
         cursor.execute("SELECT inventory_slots FROM usuarios WHERE user_id = ?", (user_id,))
         slots_data = cursor.fetchone()
-        max_slots = slots_data['inventory_slots'] if slots_data else 10
+        max_slots = 10
+        if slots_data:
+            try:
+                # Direct index or key access
+                max_slots = slots_data[0] if isinstance(slots_data, tuple) else slots_data['inventory_slots']
+            except:
+                max_slots = 10
+        
+        if max_slots is None: max_slots = 10
 
         cursor.execute("""
             SELECT * FROM inventario WHERE user_id = ?
