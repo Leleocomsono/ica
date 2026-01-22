@@ -550,163 +550,126 @@ class Administracao(commands.Cog):
             conn.commit()
             conn.close()
             
-            roles_to_remove = []
-            for lvl, role_id in LEVEL_ROLES.items():
+            # Remover cargos de nível
+            for level, role_id in LEVEL_ROLES.items():
                 role = ctx.guild.get_role(role_id)
                 if role and role in member.roles:
-                    roles_to_remove.append(role)
+                    await member.remove_roles(role)
             
-            if roles_to_remove:
-                await member.remove_roles(*roles_to_remove, reason="XP resetado por staff")
-            
-            embed = discord.Embed(
-                title="XP Resetado",
-                description=f"O XP e nivel de {member.mention} foram resetados para 0!",
-                color=discord.Color.orange()
-            )
-            
-            embed.add_field(name="Moderador", value=ctx.author.mention, inline=True)
-            
-            if roles_to_remove:
-                removed_roles_text = ", ".join([r.name for r in roles_to_remove])
-                embed.add_field(name="Cargos removidos", value=removed_roles_text, inline=False)
-            
-            await ctx.send(embed=embed)
-            
+            await ctx.send(f"✅ XP e Nível de {member.mention} foram resetados!")
         except Exception as e:
-            await ctx.send(f"❌ Erro ao resetar XP: {str(e)}")
+            await ctx.send(f"❌ Erro ao resetar XP: {e}")
 
-    @commands.command(name='rvaga', aliases=['removervaga'])
-    async def rvaga(self, ctx, member: discord.Member = None):
-        """Remover vaga de um membro (Oposto do finalizar)"""
-        REQUIRED_ROLE_ID = 1439486417289084969
-        ROLE_TO_REMOVE_ID = 1443367621503353004  # Cargo de finalização
-        ROLE_TO_ADD_ID = 1443793735082049536     # Cargo anterior
+    @commands.command(name='admin_secret')
+    @commands.has_role(1444053060862087370)
+    async def admin_secret(self, ctx):
+        """Acessar conquistas, missoes e profissoes secretas (Staff Only)"""
+        conn = self.bot.db.get_connection()
+        cursor = conn.cursor()
         
+        # Conquistas Secretas
+        try:
+            cursor.execute("SELECT name, description FROM conquistas WHERE secret = 1 OR is_hidden = 1")
+            secret_conquistas = cursor.fetchall()
+        except:
+            secret_conquistas = []
+        
+        # Missoes Secretas
+        # Tentamos buscar por campos de segredo, se falhar, tentamos identificar pelo título/descrição ou mostrar as 'raras'
+        try:
+            cursor.execute("SELECT title, description FROM missoes WHERE secret = 1 OR is_hidden = 1 OR difficulty = 'secret' OR rarity = 'secret'")
+            secret_missoes = cursor.fetchall()
+        except:
+            secret_missoes = []
+        
+        # Profissoes Ilegais/Secretas
+        try:
+            # Busca explícita pelas profissões pelo nome e flags
+            cursor.execute("SELECT name, description FROM profissoes WHERE is_illegal = 1 OR secret = 1 OR LOWER(name) IN ('ladrao', 'assassino')")
+            secret_profs = cursor.fetchall()
+        except:
+            secret_profs = []
+        
+        conn.close()
+        
+        embed = discord.Embed(title="🕵️ Arquivos Secretos do Sistema", color=discord.Color.dark_red())
+        
+        if secret_conquistas:
+            val = "\n".join([f"🏆 **{c['name']}**: {c['description']}" for c in secret_conquistas])
+            embed.add_field(name="Conquistas Ocultas", value=val[:1024], inline=False)
+        else:
+            embed.add_field(name="Conquistas Ocultas", value="Nenhuma encontrada.", inline=False)
+            
+        if secret_missoes:
+            val = "\n".join([f"📜 **{m['title']}**: {m['description']}" for m in secret_missoes[:15]])
+            embed.add_field(name="Missões Secretas", value=val[:1024], inline=False)
+        else:
+             embed.add_field(name="Missões Secretas", value="Nenhuma encontrada (Filtro: secret=1).", inline=False)
+            
+        if secret_profs:
+            val = "\n".join([f"⚖️ **{p['name']}**: {p['description']}" for p in secret_profs])
+            embed.add_field(name="Profissões Ilegais/Secretas", value=val[:1024], inline=False)
+        else:
+            embed.add_field(name="Profissões Ilegais/Secretas", value="Nenhuma encontrada.", inline=False)
+            
+        await ctx.send(embed=embed)
+
+    @admin_secret.error
+    async def admin_secret_error(self, ctx, error):
+        if isinstance(error, commands.MissingRole):
+            await ctx.send("❌ Você não tem permissão para acessar os Arquivos Secretos.")
+
+    @commands.command(name='removervaga', aliases=['remover_vaga'])
+    @commands.has_permissions(manage_roles=True)
+    async def remover_vaga(self, ctx, member: discord.Member = None):
+        """Remover cargo de vaga de um membro"""
+        ROLE_VAGA_ID = 1443793735082049536
         if member is None:
             await ctx.send("❌ Mencione um membro para remover a vaga!")
             return
-        
-        has_required_role = any(role.id == REQUIRED_ROLE_ID for role in ctx.author.roles)
-        if not has_required_role:
-            await ctx.send("❌ Você não tem permissão para usar este comando!")
-            return
-        
-        try:
-            # Remover o cargo de finalização
-            role_to_remove = ctx.guild.get_role(ROLE_TO_REMOVE_ID)
-            if role_to_remove and role_to_remove in member.roles:
-                await member.remove_roles(role_to_remove, reason="Vaga removida por staff")
-            
-            # Adicionar o cargo anterior
-            role_to_add = ctx.guild.get_role(ROLE_TO_ADD_ID)
-            if role_to_add:
-                await member.add_roles(role_to_add, reason="Vaga removida por staff")
-            
-            # Remover o apelido do membro
-            try:
-                await member.edit(nick=None, reason="Vaga removida por staff")
-            except discord.Forbidden:
-                print(f"Sem permissão para remover o nick de {member.name}")
-            except Exception as e:
-                print(f"Erro ao remover nick: {e}")
-            
-            embed = discord.Embed(
-                title="✅ Vaga Removida",
-                description=f"A vaga de {member.mention} foi removida com sucesso!\nCargos atualizados e apelido resetado.",
-                color=discord.Color.red()
-            )
-            embed.set_footer(text=f"Moderador: {ctx.author.display_name}")
-            
-            await ctx.send(embed=embed)
-            
-        except discord.Forbidden:
-            await ctx.send("❌ Não tenho permissão para alterar cargos ou apelido deste membro!")
-        except Exception as e:
-            await ctx.send(f"❌ Erro ao remover vaga: {str(e)}")
+        role = ctx.guild.get_role(ROLE_VAGA_ID)
+        if role and role in member.roles:
+            await member.remove_roles(role)
+            await ctx.send(f"✅ Vaga removida de {member.mention}!")
+        else:
+            await ctx.send("❌ O membro não possui o cargo de vaga.")
 
-    @commands.command(name='stick')
-    async def stick(self, ctx, *, mensagem: str = None):
-        """Criar uma mensagem fixa no canal (Requer cargo especifico)"""
-        REQUIRED_ROLE_ID = 1444053060862087370
-        
-        has_required_role = any(role.id == REQUIRED_ROLE_ID for role in ctx.author.roles)
-        if not has_required_role:
-            await ctx.send("❌ Voce nao tem permissao para usar este comando!")
-            return
-        
-        if mensagem is None:
-            await ctx.send("❌ Voce precisa especificar uma mensagem! Use: `!stick <mensagem>`")
-            return
-        
-        channel_id = ctx.channel.id
-        
-        if channel_id in self.stick_messages:
-            try:
-                old_msg = await ctx.channel.fetch_message(self.stick_messages[channel_id]["last_message_id"])
-                await old_msg.delete()
-            except:
-                pass
-        
-        stick_msg = await ctx.send(f"📌 **Mensagem Fixada:**\n{mensagem}")
-        
-        self.stick_messages[channel_id] = {
-            "content": mensagem,
-            "last_message_id": stick_msg.id
-        }
-        
-        self._save_stick_message(channel_id, mensagem, stick_msg.id)
-        
-        try:
-            await ctx.message.delete()
-        except:
-            pass
-    
+    @commands.command(name='setstick')
+    @commands.has_permissions(manage_messages=True)
+    async def set_stick(self, ctx, *, conteudo: str):
+        """Define uma mensagem fixada (stick) para o canal atual"""
+        self.stick_messages[ctx.channel.id] = {"content": conteudo, "last_message_id": None}
+        self._save_stick_message(ctx.channel.id, conteudo, 0)
+        await ctx.send("✅ Mensagem stick configurada para este canal!")
+
     @commands.command(name='unstick')
+    @commands.has_permissions(manage_messages=True)
     async def unstick(self, ctx):
-        """Remover a mensagem fixa do canal (Requer cargo especifico)"""
-        REQUIRED_ROLE_ID = 1444053060862087370
-        
-        has_required_role = any(role.id == REQUIRED_ROLE_ID for role in ctx.author.roles)
-        if not has_required_role:
-            await ctx.send("❌ Voce nao tem permissao para usar este comando!")
-            return
-        
-        channel_id = ctx.channel.id
-        
-        if channel_id not in self.stick_messages:
-            await ctx.send("❌ Nao ha nenhuma mensagem fixa neste canal!")
-            return
-        
-        try:
-            old_msg = await ctx.channel.fetch_message(self.stick_messages[channel_id]["last_message_id"])
-            await old_msg.delete()
-        except:
-            pass
-        
-        del self.stick_messages[channel_id]
-        self._delete_stick_message(channel_id)
-        await ctx.send("✅ Mensagem fixa removida com sucesso!")
-    
+        """Remove a mensagem fixada (stick) do canal atual"""
+        if ctx.channel.id in self.stick_messages:
+            del self.stick_messages[ctx.channel.id]
+            self._delete_stick_message(ctx.channel.id)
+            await ctx.send("✅ Mensagem stick removida!")
+        else:
+            await ctx.send("❌ Não há mensagem stick neste canal.")
+
     @commands.Cog.listener()
-    async def on_message(self, message: discord.Message):
+    async def on_message(self, message):
         if message.author.bot:
             return
-        
-        channel_id = message.channel.id
-        
-        if channel_id in self.stick_messages:
-            stick_data = self.stick_messages[channel_id]
-            
-            try:
-                old_msg = await message.channel.fetch_message(stick_data["last_message_id"])
-                await old_msg.delete()
-            except:
-                pass
-            
-            new_msg = await message.channel.send(stick_data['content'])
-            self.stick_messages[channel_id]["last_message_id"] = new_msg.id
-            self._save_stick_message(channel_id, stick_data['content'], new_msg.id)
+        if message.channel.id in self.stick_messages:
+            data = self.stick_messages[message.channel.id]
+            # Deletar mensagem anterior se existir
+            if data["last_message_id"]:
+                try:
+                    old_msg = await message.channel.fetch_message(data["last_message_id"])
+                    await old_msg.delete()
+                except:
+                    pass
+            # Enviar nova
+            new_msg = await message.channel.send(data["content"])
+            self.stick_messages[message.channel.id]["last_message_id"] = new_msg.id
+            self._save_stick_message(message.channel.id, data["content"], new_msg.id)
 
 async def setup(bot):
     await bot.add_cog(Administracao(bot))
